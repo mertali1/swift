@@ -894,6 +894,7 @@ getClangInvocationFileMapping(ASTContext &ctx) {
   // If an SDK path was explicitly passed to Swift, make sure to pass it to
   // Clang driver as well. It affects the resulting include paths.
   auto sdkPath = ctx.SearchPathOpts.getSDKPath();
+  llvm::errs() << "DIR: " << sdkPath << "\n";
   if (!sdkPath.empty()) {
     unsigned argIndex = clangDriverArgs.MakeIndex("--sysroot", sdkPath);
     clangDriverArgs.append(new llvm::opt::Arg(
@@ -902,6 +903,9 @@ getClangInvocationFileMapping(ASTContext &ctx) {
   }
   auto cxxStdlibDirs =
       clangDriver.getLibStdCxxIncludePaths(clangDriverArgs, triple);
+  for (auto it : cxxStdlibDirs) {
+    llvm::errs() << "DIR: " << it << "\n";
+  }
   if (cxxStdlibDirs.empty()) {
     ctx.Diags.diagnose(SourceLoc(), diag::libstdcxx_not_found, triple.str());
     return {};
@@ -920,6 +924,8 @@ getClangInvocationFileMapping(ASTContext &ctx) {
     actualModuleMapPath = path.getValue();
   else
     return {};
+  llvm::sys::path::remove_dots(actualModuleMapPath, /*remove_dot_dot=*/true);
+  llvm::errs() << "actualModuleMapPath: " << actualModuleMapPath << "\n";
 
   // Only inject the module map if it actually exists. It may not, for example
   // if `swiftc -target x86_64-unknown-linux-gnu -emit-ir` is invoked using
@@ -928,6 +934,7 @@ getClangInvocationFileMapping(ASTContext &ctx) {
     // FIXME: emit a warning of some kind.
     return {};
 
+  llvm::errs() << "exists: " << actualModuleMapPath << "\n";
   // TODO: remove the libstdcxx.h header and reference all libstdc++ headers
   // directly from the modulemap.
   Path actualHeaderPath = actualModuleMapPath;
@@ -950,6 +957,8 @@ getClangInvocationFileMapping(ASTContext &ctx) {
   Path injectedHeaderPath(cxxStdlibDir);
   llvm::sys::path::append(injectedHeaderPath, "libstdcxx.h");
 
+  llvm::errs() << "injecting \n";
+  llvm::errs() << injectedModuleMapPath << " to " << actualModuleMapPath << "\n";
   return {
       {std::string(injectedModuleMapPath), std::string(actualModuleMapPath)},
       {std::string(injectedHeaderPath), std::string(actualHeaderPath)},
@@ -1211,7 +1220,7 @@ ClangImporter::create(ASTContext &ctx,
   auto fileMapping = getClangInvocationFileMapping(ctx);
   // Wrap Swift's FS to allow Clang to override the working directory
   llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS =
-      llvm::vfs::RedirectingFileSystem::create(fileMapping, true,
+      llvm::vfs::RedirectingFileSystem::create(fileMapping, false,
                                                *ctx.SourceMgr.getFileSystem());
 
   // Create a new Clang compiler invocation.
